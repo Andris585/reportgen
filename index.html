@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Генератор отчётов по консультациям</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..700&display=swap" rel="stylesheet">
+<!-- SheetJS for xlsx parsing -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+/* ===== DESIGN TOKENS ===== */
+:root, [data-theme="light"] {
+  --color-bg: #f7f6f2; --color-surface: #ffffff; --color-surface-2: #f9f8f5;
+  --color-surface-offset: #f0ede8; --color-border: #dcd9d5; --color-divider: #e8e5e0;
+  --color-text: #1a1a2e; --color-text-muted: #6b6a68; --color-text-faint: #aaa9a4;
+  --color-primary: #1a3a6e; --color-primary-hover: #122d5a; --color-primary-light: #e8edf6;
+  --color-success: #2d7a3d; --color-success-bg: #e6f4ea;
+  --color-warning: #c86400; --color-warning-bg: #fff3e0;
+  --color-error: #c0392b; --color-error-bg: #fce4e4;
+  --color-accent: #4f7fd4;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.08); --shadow-md: 0 4px 16px rgba(0,0,0,0.1);
+  --shadow-lg: 0 12px 40px rgba(0,0,0,0.14);
+  --radius-sm: 0.375rem; --radius-md: 0.5rem; --radius-lg: 0.75rem; --radius-xl: 1rem;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --text-xs: clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem);
+  --text-sm: clamp(0.875rem, 0.8rem + 0.35vw, 1rem);
+  --text-base: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+  --text-lg: clamp(1.125rem, 1rem + 0.75vw, 1.5rem);
+  --text-xl: clamp(1.5rem, 1.2rem + 1.25vw, 2.25rem);
+}
+[data-theme="dark"] {
+  --color-bg: #12111a; --color-surface: #1c1b28; --color-surface-2: #222130;
+  --color-surface-offset: #282736; --color-border: #363548; --color-divider: #2e2d3e;
+  --color-text: #e8e6f0; --color-text-muted: #8b89a0; --color-text-faint: #56546a;
+  --color-primary: #6b8fd4; --color-primary-hover: #8aaade; --color-primary-light: #1e2340;
+  --color-success: #6daa45; --color-success-bg: #1e2e1a;
+  --color-warning: #fdab43; --color-warning-bg: #2e2010;
+  --color-error: #dd6974; --color-error-bg: #2e1a1c;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.3); --shadow-md: 0 4px 16px rgba(0,0,0,0.4);
+  --shadow-lg: 0 12px 40px rgba(0,0,0,0.5);
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme]) {
+  --color-bg: #12111a; --color-surface: #1c1b28; --color-surface-2: #22213a;
+  --color-surface-offset: #282736; --color-border: #363548; --color-divider: #2e2d3e;
+  --color-text: #e8e6f0; --color-text-muted: #8b89a0; --color-text-faint: #56546a;
+  --color-primary: #6b8fd4; --color-primary-hover: #8aaade; --color-primary-light: #1e2340;
+  --color-success: #6daa45; --color-success-bg: #1e2e1a;
+  --color-warning: #fdab43; --color-warning-bg: #2e2010;
+  --color-error: #dd6974; --color-error-bg: #2e1a1c;
+}}
+
+/* ===== RESET ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-font-smoothing: antialiased; scroll-behavior: smooth; }
+body { font-family: var(--font-body); font-size: var(--text-sm); color: var(--color-text); background: var(--color-bg); min-height: 100dvh; line-height: 1.6; }
+button { cursor: pointer; font: inherit; }
+
+/* ===== LAYOUT ===== */
+.app { max-width: 900px; margin: 0 auto; padding: 0 1.5rem 4rem; }
+
+/* ===== HEADER ===== */
+.site-header {
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  position: sticky; top: 0; z-index: 100;
+  box-shadow: var(--shadow-sm);
+}
+.site-header-inner {
+  max-width: 900px; margin: 0 auto;
+  padding: 0.75rem 1.5rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.logo { display: flex; align-items: center; gap: 0.625rem; text-decoration: none; color: var(--color-text); }
+.logo-icon { width: 32px; height: 32px; flex-shrink: 0; }
+.logo-text { font-size: var(--text-base); font-weight: 700; color: var(--color-primary); }
+.header-actions { display: flex; align-items: center; gap: 0.5rem; }
+
+/* ===== THEME TOGGLE ===== */
+.theme-toggle {
+  width: 36px; height: 36px; border-radius: var(--radius-md);
+  background: var(--color-surface-offset); border: 1px solid var(--color-border);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--color-text-muted); transition: all 180ms ease;
+}
+.theme-toggle:hover { background: var(--color-primary-light); color: var(--color-primary); }
+
+/* ===== UPLOAD ZONE ===== */
+.upload-section { padding: 3rem 0 2rem; }
+.upload-hero { text-align: center; margin-bottom: 2.5rem; }
+.upload-hero h1 { font-size: var(--text-xl); font-weight: 700; color: var(--color-primary); margin-bottom: 0.5rem; line-height: 1.2; }
+.upload-hero p { font-size: var(--text-base); color: var(--color-text-muted); max-width: 52ch; margin: 0 auto; }
+
+.drop-zone {
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  padding: 3rem 2rem;
+  text-align: center;
+  transition: all 200ms ease;
+  cursor: pointer;
+  position: relative;
+}
+.drop-zone:hover, .drop-zone.drag-over {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+.drop-zone input[type="file"] {
+  position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+}
+.drop-icon { font-size: 3rem; margin-bottom: 1rem; display: block; }
+.drop-zone h2 { font-size: var(--text-lg); font-weight: 600; color: var(--color-text); margin-bottom: 0.375rem; }
+.drop-zone p { font-size: var(--text-sm); color: var(--color-text-muted); }
+.drop-zone .btn-browse {
+  display: inline-block; margin-top: 1.25rem;
+  padding: 0.625rem 1.5rem; border-radius: var(--radius-md);
+  background: var(--color-primary); color: #fff;
+  font-size: var(--text-sm); font-weight: 600;
+  border: none; transition: background 180ms ease;
+  pointer-events: none;
+}
+.drop-zone:hover .btn-browse { background: var(--color-primary-hover); }
+
+/* ===== TEMPLATE DOWNLOAD ===== */
+.template-hint {
+  margin-top: 1.25rem; padding: 0.875rem 1.25rem;
+  background: var(--color-surface-2); border-radius: var(--radius-lg);
+  border: 1px solid var(--color-divider);
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+}
+.template-hint span { font-size: var(--text-sm); color: var(--color-text-muted); }
+.btn-dl {
+  padding: 0.5rem 1.125rem; border-radius: var(--radius-md);
+  border: 1px solid var(--color-primary); color: var(--color-primary);
+  background: transparent; font-size: var(--text-sm); font-weight: 600;
+  text-decoration: none; transition: all 180ms ease;
+  display: inline-flex; align-items: center; gap: 0.375rem;
+}
+.btn-dl:hover { background: var(--color-primary); color: #fff; }
+
+/* ===== STATUS BAR ===== */
+.status-bar {
+  margin-top: 1.5rem; padding: 0.875rem 1.25rem;
+  border-radius: var(--radius-lg); font-size: var(--text-sm); font-weight: 500;
+  display: none; align-items: center; gap: 0.625rem;
+}
+.status-bar.visible { display: flex; }
+.status-bar.info { background: var(--color-primary-light); color: var(--color-primary); border: 1px solid var(--color-border); }
+.status-bar.success { background: var(--color-success-bg); color: var(--color-success); border: 1px solid #b7dbb0; }
+.status-bar.error { background: var(--color-error-bg); color: var(--color-error); border: 1px solid #f0b4b0; }
+
+/* ===== REPORT PREVIEW ===== */
+#report-container { display: none; }
+#report-container.visible { display: block; }
+
+.report-actions {
+  display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center;
+  padding: 1.5rem 0 1.25rem; border-top: 1px solid var(--color-divider); margin-top: 1rem;
+}
+.btn-primary {
+  padding: 0.625rem 1.375rem; border-radius: var(--radius-md);
+  background: var(--color-primary); color: #fff;
+  font-size: var(--text-sm); font-weight: 600; border: none;
+  transition: background 180ms ease; display: inline-flex; align-items: center; gap: 0.375rem;
+}
+.btn-primary:hover { background: var(--color-primary-hover); }
+.btn-secondary {
+  padding: 0.625rem 1.375rem; border-radius: var(--radius-md);
+  border: 1px solid var(--color-border); background: var(--color-surface);
+  color: var(--color-text); font-size: var(--text-sm); font-weight: 500;
+  transition: all 180ms ease; display: inline-flex; align-items: center; gap: 0.375rem;
+}
+.btn-secondary:hover { border-color: var(--color-primary); color: var(--color-primary); }
+
+/* ===== GENERATED REPORT STYLES ===== */
+.report-wrap { background: var(--color-surface); border-radius: var(--radius-xl); border: 1px solid var(--color-border); overflow: hidden; box-shadow: var(--shadow-md); }
+.rp { font-family: var(--font-body); font-size: 10pt; color: #1a1a2e; }
+.rp-inner { padding: 2rem 2.5rem 2.5rem; max-width: 100%; }
+
+.rp-header { border-bottom: 3px solid #1a3a6e; padding-bottom: 1rem; margin-bottom: 1.5rem; }
+.rp-header .org { font-size: 8pt; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+.rp-header h1 { font-size: 16pt; font-weight: 700; color: #1a3a6e; margin: 0.25rem 0 0.625rem; }
+.rp-meta { display: flex; flex-wrap: wrap; gap: 1.25rem; margin-top: 0.625rem; }
+.rp-meta-item { display: flex; flex-direction: column; gap: 2px; }
+.rp-meta-item .lbl { font-size: 7.5pt; color: #888; text-transform: uppercase; letter-spacing: 0.4px; }
+.rp-meta-item .val { font-weight: 600; color: #1a3a6e; font-size: 9.5pt; }
+
+.rp-section-title { font-size: 11pt; font-weight: 700; color: #1a3a6e; border-left: 4px solid #1a3a6e; padding-left: 0.625rem; margin: 1.5rem 0 0.875rem; }
+
+.stat-boxes { display: flex; gap: 0.875rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.stat-box { flex: 1; min-width: 130px; max-width: 220px; background: #1a3a6e; color: #fff; border-radius: 8px; padding: 0.875rem 1rem; }
+.stat-box .sb-num { font-size: 22pt; font-weight: 800; line-height: 1; }
+.stat-box .sb-lbl { font-size: 8pt; opacity: 0.85; margin-top: 4px; }
+
+.rp-table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+.rp-table th { background: #1a3a6e; color: #fff; padding: 7px 10px; text-align: left; font-weight: 600; }
+.rp-table td { padding: 6px 10px; border-bottom: 1px solid #e0e6f0; }
+.rp-table tr:nth-child(even) td { background: #f0f4fb; }
+.rp-table .total-row td { font-weight: 700; background: #dde5f5; border-top: 2px solid #1a3a6e; }
+
+.rp-card { border: 1px solid #ccd6ec; border-radius: 8px; margin-bottom: 1.125rem; overflow: hidden; page-break-inside: avoid; }
+.rp-card-header { background: #1a3a6e; color: #fff; padding: 0.5rem 0.875rem; display: flex; flex-wrap: wrap; gap: 0.5rem 0.875rem; align-items: center; }
+.rp-card-num { font-weight: 800; font-size: 11pt; }
+.rp-card-date, .rp-card-time { font-size: 9pt; opacity: 0.9; }
+.rp-card-instr { margin-left: auto; background: rgba(255,255,255,0.2); border-radius: 4px; padding: 2px 10px; font-size: 8.5pt; font-weight: 600; }
+.rp-card-body { padding: 0.875rem; }
+.rp-fields-row { display: flex; flex-wrap: wrap; gap: 0.625rem 1.25rem; margin-bottom: 0.75rem; }
+.rp-field { display: flex; flex-direction: column; gap: 2px; flex: 1 1 200px; min-width: 140px; }
+.rp-field.full { flex: 1 1 100%; margin-bottom: 0.625rem; }
+.rp-label { font-size: 7.5pt; text-transform: uppercase; letter-spacing: 0.4px; color: #7a8ab0; font-weight: 600; }
+.rp-value { font-size: 9.5pt; color: #1a1a2e; line-height: 1.5; }
+.status-done { display: inline-block; background: #e6f4ea; color: #2d7a3d; border-radius: 4px; padding: 1px 8px; font-weight: 700; font-size: 9pt; }
+.status-partial { display: inline-block; background: #fff3e0; color: #c86400; border-radius: 4px; padding: 1px 8px; font-weight: 700; font-size: 9pt; }
+.status-no { display: inline-block; background: #fce4e4; color: #c0392b; border-radius: 4px; padding: 1px 8px; font-weight: 700; font-size: 9pt; }
+
+/* ===== FOOTER ===== */
+.site-footer { margin-top: 4rem; padding: 1.5rem; text-align: center; border-top: 1px solid var(--color-divider); font-size: var(--text-xs); color: var(--color-text-faint); }
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 600px) {
+  .app { padding: 0 1rem 3rem; }
+  .rp-inner { padding: 1.25rem 1rem 1.5rem; }
+  .drop-zone { padding: 2rem 1rem; }
+  .stat-box { flex: 1 1 calc(50% - 0.5rem); }
+  .rp-card-instr { margin-left: 0; }
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="#" class="logo" aria-label="Генератор отчётов">
+      <svg class="logo-icon" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+        <rect width="32" height="32" rx="8" fill="#1a3a6e"/>
+        <rect x="8" y="9" width="10" height="2" rx="1" fill="white" opacity="0.9"/>
+        <rect x="8" y="13" width="16" height="2" rx="1" fill="white" opacity="0.7"/>
+        <rect x="8" y="17" width="14" height="2" rx="1" fill="white" opacity="0.7"/>
+        <rect x="8" y="21" width="9" height="2" rx="1" fill="white" opacity="0.5"/>
+        <circle cx="23" cy="22" r="5" fill="#4f7fd4"/>
+        <path d="M21 22l1.5 1.5L25 20" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span class="logo-text">ReportGen</span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" data-theme-toggle aria-label="Переключить тему">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- MAIN -->
+<main class="app">
+
+  <!-- UPLOAD SECTION -->
+  <section class="upload-section" id="upload-section">
+    <div class="upload-hero">
+      <h1>Генератор отчётов по консультациям</h1>
+      <p>Загрузите заполненный Excel-шаблон — система автоматически сформирует готовый печатный отчёт</p>
+    </div>
+
+    <div class="drop-zone" id="drop-zone">
+      <input type="file" id="file-input" accept=".xlsx,.xls" aria-label="Выбрать Excel-файл">
+      <span class="drop-icon">📊</span>
+      <h2>Перетащите файл сюда</h2>
+      <p>или нажмите кнопку ниже</p>
+      <span class="btn-browse">Выбрать файл (.xlsx)</span>
+    </div>
+
+    <div class="template-hint">
+      <span>📥 Нет шаблона? Скачайте пустой Excel-файл с нужной структурой</span>
+      <button class="btn-dl" id="btn-download-template">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Скачать шаблон
+      </button>
+    </div>
+
+    <div class="status-bar info" id="status-bar">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <span id="status-text">Обработка файла…</span>
+    </div>
+  </section>
+
+  <!-- REPORT OUTPUT -->
+  <div id="report-container">
+    <div class="report-actions">
+      <button class="btn-primary" id="btn-download-html">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Скачать отчёт (HTML)
+      </button>
+      <button class="btn-primary" id="btn-print">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        Печать / PDF
+      </button>
+      <button class="btn-secondary" id="btn-reset">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>
+        Загрузить другой файл
+      </button>
+    </div>
+    <div class="report-wrap">
+      <div id="report-output" class="rp"></div>
+    </div>
+  </div>
+
+</main>
+
+<footer class="site-footer">
+  ReportGen &bull; Генератор отчётов об очных консультациях
+</footer>
+
+<script>
+// ===== THEME TOGGLE =====
+(function(){
+  const t = document.querySelector('[data-theme-toggle]');
+  const r = document.documentElement;
+  let d = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  if (r.getAttribute('data-theme')) d = r.getAttribute('data-theme');
+  r.setAttribute('data-theme', d);
+  function updateIcon() {
+    t.innerHTML = d === 'dark'
+      ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>'
+      : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+  }
+  updateIcon();
+  t && t.addEventListener('click', () => {
+    d = d === 'dark' ? 'light' : 'dark';
+    r.setAttribute('data-theme', d);
+    updateIcon();
+  });
+})();
+
+// ===== TEMPLATE DOWNLOAD =====
+document.getElementById('btn-download-template').addEventListener('click', function() {
+  if (typeof XLSX === 'undefined') { alert('Библиотека XLSX не загружена'); return; }
+  const headers = [
+    'Тип консультации','№ консультации','Дата','Время начало','Время конец',
+    'Продолжительность, мин','ФИО участника','Комбинат','Цех','Цех/ Участок',
+    'Роль консультируемого','ФИО консультанта Tactise','Инструмент',
+    'Тема консультации','ИКР по теме консультации',
+    'ИКР продемонстрирован \n(Выполнено/ Нет/ Частично)',
+    'Как продемонстрирован / Почему не продемонстрирован',
+    'Рекомендации для самоподготовки'
+  ];
+  const exampleRow = [
+    'Очно','ЦПЧ 0001','2026-05-01','09:00','10:00','60',
+    'Иванов И.И.','КАДП','ЦПЧ','АБК стр. 5',
+    'РМ','Консультант И.О.','Подготовка к обучению',
+    'Тема консультации','ИКР по теме',
+    'Выполнена','Описание','Рекомендации'
+  ];
+  const ws = XLSX.utils.aoa_to_sheet([headers, exampleRow]);
+  // Column widths
+  ws['!cols'] = headers.map((h,i) => ({ wch: i < 2 ? 18 : i < 5 ? 14 : 30 }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Отчеты');
+  XLSX.writeFile(wb, 'шаблон_консультации.xlsx');
+});
+
+// ===== FILE UPLOAD =====
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) processFile(file);
+});
+fileInput.addEventListener('change', e => {
+  if (e.target.files[0]) processFile(e.target.files[0]);
+});
+
+function setStatus(msg, type) {
+  const bar = document.getElementById('status-bar');
+  const text = document.getElementById('status-text');
+  bar.className = 'status-bar visible ' + type;
+  text.textContent = msg;
+}
+
+function processFile(file) {
+  if (!file.name.match(/\.xlsx?$/i)) {
+    setStatus('Неверный формат файла. Загрузите .xlsx файл.', 'error');
+    return;
+  }
+  setStatus('Читаю файл: ' + file.name, 'info');
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, { type: 'array', cellDates: true });
+      // Find sheet named "Отчеты"
+      const sheetName = wb.SheetNames.find(n => n.trim() === 'Отчеты') || wb.SheetNames[0];
+      if (!sheetName) throw new Error('Лист "Отчеты" не найден в файле.');
+      const ws = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      if (!rows || rows.length === 0) throw new Error('Лист пустой или не содержит данных.');
+      setStatus('Файл прочитан успешно. Строк данных: ' + rows.length, 'success');
+      generateReport(rows, file.name);
+    } catch(err) {
+      setStatus('Ошибка обработки файла: ' + err.message, 'error');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ===== REPORT GENERATOR =====
+function esc(v) {
+  if (v === null || v === undefined || v === '') return '';
+  return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
+
+function fmtDate(v) {
+  if (!v) return '';
+  if (v instanceof Date) return v.toLocaleDateString('ru-RU');
+  const s = String(v);
+  // ISO
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return m[3] + '.' + m[2] + '.' + m[1];
+  return s.substring(0, 10);
+}
+
+function fmtTime(v) {
+  if (!v) return '';
+  if (v instanceof Date) return v.toTimeString().slice(0,5);
+  const s = String(v);
+  const m = s.match(/(\d{1,2}):(\d{2})/);
+  if (m) return m[1].padStart(2,'0') + ':' + m[2];
+  return s;
+}
+
+function fmtDur(v) {
+  if (!v && v !== 0) return '';
+  const n = parseFloat(v);
+  if (isNaN(n)) return String(v);
+  return Math.round(n) + ' мин';
+}
+
+function getField(row, ...keys) {
+  for (const k of keys) {
+    const found = Object.keys(row).find(rk => rk.trim().replace(/\s+/g,' ').toLowerCase().includes(k.toLowerCase()));
+    if (found && row[found] !== '' && row[found] !== null && row[found] !== undefined) return row[found];
+  }
+  return '';
+}
+
+function generateReport(rows, fileName) {
+  // Extract fields
+  const data = rows.map(row => ({
+    type:      getField(row, 'Тип консультации'),
+    num:       getField(row, '№ консультации'),
+    date:      getField(row, 'Дата'),
+    t_start:   getField(row, 'Время начало', 'начало'),
+    t_end:     getField(row, 'Время конец', 'конец'),
+    dur:       getField(row, 'Продолжительность'),
+    fio:       getField(row, 'ФИО участника'),
+    kombinat:  getField(row, 'Комбинат'),
+    tseh:      getField(row, 'Цех/', 'Цех'),
+    uchastok:  getField(row, 'Участок'),
+    role:      getField(row, 'Роль'),
+    cons:      getField(row, 'консультанта'),
+    instr:     getField(row, 'Инструмент'),
+    tema:      getField(row, 'Тема консультации'),
+    ikr:       getField(row, 'ИКР по теме'),
+    ikr_status:getField(row, 'продемонстрирован'),
+    ikr_desc:  getField(row, 'продемонстрирован /', 'Как продемон'),
+    recom:     getField(row, 'Рекомендации'),
+  }));
+
+  const total = data.length;
+  const totalMin = data.reduce((s, r) => s + (parseFloat(r.dur) || 0), 0);
+  const konsultant = data.find(r => r.cons)?.cons || '';
+  const komb = data.find(r => r.kombinat)?.kombinat || '';
+  const tseh = data.find(r => r.tseh)?.tseh || '';
+  const dates = data.map(r => fmtDate(r.date)).filter(Boolean);
+  const periodStart = dates[0] || '';
+  const periodEnd = dates[dates.length - 1] || periodStart;
+
+  // By instrument
+  const instrMap = {};
+  data.forEach(r => {
+    const k = r.instr || 'Не указано';
+    if (!instrMap[k]) instrMap[k] = {count: 0, min: 0};
+    instrMap[k].count++;
+    instrMap[k].min += parseFloat(r.dur) || 0;
+  });
+
+  // IKR done count
+  const ikrDone = data.filter(r => r.ikr_status && r.ikr_status.toLowerCase().includes('выполн')).length;
+  const ikrPct = total > 0 ? Math.round(ikrDone / total * 100) : 0;
+
+  // Summary table rows
+  let summaryRows = '';
+  Object.entries(instrMap).forEach(([k, v]) => {
+    summaryRows += `<tr><td>${esc(k)}</td><td>${v.count}</td><td>${Math.round(v.min)}</td><td>${(v.min/60).toFixed(1)}</td></tr>`;
+  });
+  summaryRows += `<tr class="total-row"><td>ИТОГО</td><td>${total}</td><td>${Math.round(totalMin)}</td><td>${(totalMin/60).toFixed(1)}</td></tr>`;
+
+  // Cards
+  let cardsHtml = '';
+  data.forEach(row => {
+    const ikrLow = String(row.ikr_status).toLowerCase();
+    const statusCls = ikrLow.includes('выполн') ? 'status-done' : ikrLow.includes('частич') ? 'status-partial' : 'status-no';
+    const hasRecom = row.recom && String(row.recom).trim() !== '';
+    cardsHtml += `
+    <div class="rp-card">
+      <div class="rp-card-header">
+        <span class="rp-card-num">${esc(row.num)}</span>
+        <span class="rp-card-date">📅 ${fmtDate(row.date)}</span>
+        <span class="rp-card-time">⏱ ${fmtTime(row.t_start)} – ${fmtTime(row.t_end)} (${fmtDur(row.dur)})</span>
+        <span class="rp-card-instr">${esc(row.instr)}</span>
+      </div>
+      <div class="rp-card-body">
+        <div class="rp-fields-row">
+          <div class="rp-field">
+            <span class="rp-label">Участник(и)</span>
+            <span class="rp-value">${esc(row.fio)}</span>
+          </div>
+          <div class="rp-field">
+            <span class="rp-label">Роль</span>
+            <span class="rp-value">${esc(row.role)}</span>
+          </div>
+          <div class="rp-field">
+            <span class="rp-label">Комбинат / Цех / Участок</span>
+            <span class="rp-value">${esc(row.kombinat)} / ${esc(row.tseh)} / ${esc(row.uchastok)}</span>
+          </div>
+          <div class="rp-field">
+            <span class="rp-label">Консультант</span>
+            <span class="rp-value">${esc(row.cons)}</span>
+          </div>
+        </div>
+        <div class="rp-field full">
+          <span class="rp-label">Тема консультации</span>
+          <span class="rp-value">${esc(row.tema)}</span>
+        </div>
+        <div class="rp-field full">
+          <span class="rp-label">ИКР по теме</span>
+          <span class="rp-value">${esc(row.ikr)}</span>
+        </div>
+        <div class="rp-field full">
+          <span class="rp-label">ИКР продемонстрирован</span>
+          <span class="rp-value"><span class="${statusCls}">${esc(row.ikr_status)}</span></span>
+        </div>
+        <div class="rp-field full">
+          <span class="rp-label">Как продемонстрирован / Почему не продемонстрирован</span>
+          <span class="rp-value">${esc(row.ikr_desc)}</span>
+        </div>
+        ${hasRecom ? `<div class="rp-field full">
+          <span class="rp-label">Рекомендации для самоподготовки</span>
+          <span class="rp-value">${esc(row.recom)}</span>
+        </div>` : ''}
+      </div>
+    </div>`;
+  });
+
+  const html = `<div class="rp-inner">
+    <div class="rp-header">
+      <div class="org">Tactise — Отчётность по консультационной деятельности</div>
+      <h1>Отчёт об очных консультациях</h1>
+      <div class="rp-meta">
+        <div class="rp-meta-item"><span class="lbl">Комбинат</span><span class="val">${esc(komb)}</span></div>
+        <div class="rp-meta-item"><span class="lbl">Цех</span><span class="val">${esc(tseh)}</span></div>
+        <div class="rp-meta-item"><span class="lbl">Консультант</span><span class="val">${esc(konsultant)}</span></div>
+        <div class="rp-meta-item"><span class="lbl">Период</span><span class="val">${periodStart} – ${periodEnd}</span></div>
+      </div>
+    </div>
+    <div class="rp-section-title">Сводные показатели</div>
+    <div class="stat-boxes">
+      <div class="stat-box"><div class="sb-num">${total}</div><div class="sb-lbl">консультаций проведено</div></div>
+      <div class="stat-box"><div class="sb-num">${Math.round(totalMin)}</div><div class="sb-lbl">минут / ${(totalMin/60).toFixed(1)} ч суммарно</div></div>
+      <div class="stat-box"><div class="sb-num">${ikrPct}%</div><div class="sb-lbl">ИКР выполнено</div></div>
+      <div class="stat-box"><div class="sb-num">${Object.keys(instrMap).length}</div><div class="sb-lbl">видов инструментов</div></div>
+    </div>
+    <div class="rp-section-title">Распределение по инструментам</div>
+    <table class="rp-table">
+      <thead><tr><th>Инструмент / Тип работы</th><th>Кол-во</th><th>Время (мин)</th><th>Время (ч)</th></tr></thead>
+      <tbody>${summaryRows}</tbody>
+    </table>
+    <div class="rp-section-title">Детализация по консультациям</div>
+    ${cardsHtml}
+  </div>`;
+
+  document.getElementById('report-output').innerHTML = html;
+
+  // Store for download
+  window._reportHtml = buildStandaloneHtml(html, konsultant, komb, tseh, periodStart, periodEnd);
+  window._reportFileName = fileName.replace(/\.xlsx?$/i, '') + '_отчёт.html';
+
+  document.getElementById('report-container').classList.add('visible');
+  document.getElementById('report-container').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function buildStandaloneHtml(bodyContent, konsultant, komb, tseh, p1, p2) {
+  return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Отчёт об очных консультациях — ${komb} ${tseh}</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Arial,sans-serif;font-size:10pt;color:#1a1a2e;background:#f4f6fb}
+.page{max-width:900px;margin:0 auto;padding:20px 24px 40px;background:#fff}
+.org{font-size:9pt;color:#666;text-transform:uppercase;letter-spacing:1px}
+h1{font-size:16pt;font-weight:700;color:#1a3a6e;margin:4px 0 8px;line-height:1.3}
+.rp-meta{display:flex;flex-wrap:wrap;gap:18px;font-size:9pt;color:#444;margin-top:8px}
+.rp-meta-item{display:flex;flex-direction:column}
+.lbl{font-size:7.5pt;color:#888;text-transform:uppercase;letter-spacing:0.5px}
+.val{font-weight:600;color:#1a3a6e}
+.rp-header{border-bottom:3px solid #1a3a6e;padding-bottom:14px;margin-bottom:20px}
+.rp-section-title{font-size:11pt;font-weight:700;color:#1a3a6e;border-left:4px solid #1a3a6e;padding-left:10px;margin:24px 0 12px}
+.stat-boxes{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:20px}
+.stat-box{flex:1;min-width:130px;max-width:220px;background:#1a3a6e;color:#fff;border-radius:8px;padding:12px 16px}
+.sb-num{font-size:22pt;font-weight:800;line-height:1}
+.sb-lbl{font-size:8pt;opacity:0.85;margin-top:4px}
+.rp-table{width:100%;border-collapse:collapse;font-size:9pt;margin-bottom:8px}
+.rp-table th{background:#1a3a6e;color:#fff;padding:7px 10px;text-align:left;font-weight:600}
+.rp-table td{padding:6px 10px;border-bottom:1px solid #e0e6f0}
+.rp-table tr:nth-child(even) td{background:#f0f4fb}
+.rp-table .total-row td{font-weight:700;background:#dde5f5;border-top:2px solid #1a3a6e}
+.rp-card{border:1px solid #ccd6ec;border-radius:8px;margin-bottom:18px;overflow:hidden;page-break-inside:avoid}
+.rp-card-header{background:#1a3a6e;color:#fff;padding:8px 14px;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+.rp-card-num{font-weight:800;font-size:11pt}
+.rp-card-date,.rp-card-time{font-size:9pt;opacity:0.9}
+.rp-card-instr{margin-left:auto;background:rgba(255,255,255,0.2);border-radius:4px;padding:2px 10px;font-size:8.5pt;font-weight:600}
+.rp-card-body{padding:12px 14px}
+.rp-fields-row{display:flex;flex-wrap:wrap;gap:10px 20px;margin-bottom:10px}
+.rp-field{display:flex;flex-direction:column;gap:2px;flex:1 1 200px;min-width:140px}
+.rp-field.full{flex:1 1 100%;margin-bottom:8px}
+.rp-label{font-size:7.5pt;text-transform:uppercase;letter-spacing:0.4px;color:#7a8ab0;font-weight:600}
+.rp-value{font-size:9.5pt;color:#1a1a2e;line-height:1.5}
+.status-done{display:inline-block;background:#e6f4ea;color:#2d7a3d;border-radius:4px;padding:1px 8px;font-weight:700}
+.status-partial{display:inline-block;background:#fff3e0;color:#c86400;border-radius:4px;padding:1px 8px;font-weight:700}
+.status-no{display:inline-block;background:#fce4e4;color:#c0392b;border-radius:4px;padding:1px 8px;font-weight:700}
+@media print{body{background:#fff}.page{padding:10px 14px;max-width:100%}.rp-card{page-break-inside:avoid}}
+@media screen and (max-width:600px){.page{padding:12px 10px 30px}.stat-box{flex:1 1 calc(50% - 14px)}.rp-card-instr{margin-left:0}}
+</style>
+</head>
+<body>
+<div class="page">
+${bodyContent}
+</div>
+</body>
+</html>`;
+}
+
+// ===== ACTIONS =====
+document.getElementById('btn-download-html').addEventListener('click', function() {
+  if (!window._reportHtml) return;
+  const blob = new Blob([window._reportHtml], { type: 'text/html;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = window._reportFileName || 'отчёт.html';
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+document.getElementById('btn-print').addEventListener('click', function() {
+  if (!window._reportHtml) return;
+  const win = window.open('', '_blank');
+  win.document.write(window._reportHtml);
+  win.document.close();
+  win.focus();
+  setTimeout(() => win.print(), 400);
+});
+
+document.getElementById('btn-reset').addEventListener('click', function() {
+  document.getElementById('report-container').classList.remove('visible');
+  document.getElementById('file-input').value = '';
+  document.getElementById('status-bar').className = 'status-bar';
+  window._reportHtml = null;
+  document.getElementById('upload-section').scrollIntoView({ behavior: 'smooth' });
+});
+</script>
+</body>
+</html>
