@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Генератор отчётов по консультациям</title>
+<title>Генератор отчётов по консультациям [v2026-07-06b]</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..700&display=swap" rel="stylesheet">
@@ -393,12 +393,12 @@ function processFile(file) {
   reader.onload = function(e) {
     try {
       const data = new Uint8Array(e.target.result);
-      const wb = XLSX.read(data, { type: 'array', cellDates: true });
+      const wb = XLSX.read(data, { type: 'array' });
       // Find sheet named "Отчеты"
       const sheetName = wb.SheetNames.find(n => n.trim() === 'Отчеты') || wb.SheetNames[0];
       if (!sheetName) throw new Error('Лист "Отчеты" не найден в файле.');
       const ws = wb.Sheets[sheetName];
-      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: true });
       if (!rows || rows.length === 0) throw new Error('Лист пустой или не содержит данных.');
       setStatus('Файл прочитан успешно. Строк данных: ' + rows.length, 'success');
       generateReport(rows, file.name);
@@ -416,26 +416,36 @@ function esc(v) {
 }
 
 function fmtDate(v) {
-  if (!v) return '';
+  if (v === null || v === undefined || v === '') return '';
+  // Excel serial number -> parse via SSF (timezone-safe, no Date object)
+  if (typeof v === 'number') {
+    const d = XLSX.SSF.parse_date_code(v);
+    if (d) {
+      return String(d.d).padStart(2, '0') + '.' +
+             String(d.m).padStart(2, '0') + '.' + d.y;
+    }
+  }
   if (v instanceof Date) {
-    const d = String(v.getUTCDate()).padStart(2, '0');
-    const m = String(v.getUTCMonth() + 1).padStart(2, '0');
-    const y = v.getUTCFullYear();
-    return d + '.' + m + '.' + y;
+    return String(v.getUTCDate()).padStart(2, '0') + '.' +
+           String(v.getUTCMonth() + 1).padStart(2, '0') + '.' + v.getUTCFullYear();
   }
   const s = String(v);
-  // ISO
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) return m[3] + '.' + m[2] + '.' + m[1];
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return iso[3] + '.' + iso[2] + '.' + iso[1];
+  const rus = s.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})/);
+  if (rus) return rus[1].padStart(2,'0') + '.' + rus[2].padStart(2,'0') + '.' + rus[3];
   return s.substring(0, 10);
 }
 
 function fmtTime(v) {
-  if (!v) return '';
+  if (v === null || v === undefined || v === '') return '';
+  // Excel serial: fractional part is time of day
+  if (typeof v === 'number') {
+    const d = XLSX.SSF.parse_date_code(v);
+    if (d) return String(d.H).padStart(2,'0') + ':' + String(d.M).padStart(2,'0');
+  }
   if (v instanceof Date) {
-    const h = String(v.getUTCHours()).padStart(2, '0');
-    const mi = String(v.getUTCMinutes()).padStart(2, '0');
-    return h + ':' + mi;
+    return String(v.getUTCHours()).padStart(2,'0') + ':' + String(v.getUTCMinutes()).padStart(2,'0');
   }
   const s = String(v);
   const m = s.match(/(\d{1,2}):(\d{2})/);
@@ -460,6 +470,14 @@ function getField(row, ...keys) {
 
 function generateReport(rows, fileName) {
   // Extract fields
+  // ==== DIAGNOSTIC v2026-07-06b: log raw date cell values ====
+  try {
+    console.log('[Генератор отчётов] Версия: 2026-07-06b');
+    rows.slice(0,5).forEach((row, i) => {
+      const dv = getField(row, 'Дата');
+      console.log('Строка ' + (i+1) + ' | Дата raw =', dv, '| тип =', (dv instanceof Date ? 'Date' : typeof dv), '| fmtDate =', fmtDate(dv));
+    });
+  } catch(e) { console.warn('diag error', e); }
   const data = rows.map(row => ({
     type:      getField(row, 'Тип консультации'),
     num:       getField(row, '№ консультации'),
