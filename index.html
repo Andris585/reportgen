@@ -417,7 +417,12 @@ function esc(v) {
 
 function fmtDate(v) {
   if (!v) return '';
-  if (v instanceof Date) return v.toLocaleDateString('ru-RU');
+  if (v instanceof Date) {
+    const d = String(v.getUTCDate()).padStart(2, '0');
+    const m = String(v.getUTCMonth() + 1).padStart(2, '0');
+    const y = v.getUTCFullYear();
+    return d + '.' + m + '.' + y;
+  }
   const s = String(v);
   // ISO
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -427,7 +432,11 @@ function fmtDate(v) {
 
 function fmtTime(v) {
   if (!v) return '';
-  if (v instanceof Date) return v.toTimeString().slice(0,5);
+  if (v instanceof Date) {
+    const h = String(v.getUTCHours()).padStart(2, '0');
+    const mi = String(v.getUTCMinutes()).padStart(2, '0');
+    return h + ':' + mi;
+  }
   const s = String(v);
   const m = s.match(/(\d{1,2}):(\d{2})/);
   if (m) return m[1].padStart(2,'0') + ':' + m[2];
